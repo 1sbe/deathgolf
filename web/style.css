@@ -1,0 +1,29 @@
+body { margin: 0; overflow: hidden; font: 14px system-ui, sans-serif; background: #8cbff2; }
+canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+#panel { position: fixed; top: 10px; left: 10px; width: 210px; background: rgba(20, 25, 30, .88); color: #eee; padding: 10px; border-radius: 6px; display: flex; flex-direction: column; gap: 6px; }
+#panel h3 { margin: 0; }
+#tools { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+button { background: #3a4550; color: #fff; border: 1px solid #555; border-radius: 4px; padding: 5px; cursor: pointer; }
+button:hover { background: #4b5966; }
+button.on { background: #2e8b57; }
+button.rm { background: #5a3a3a; }
+button.big { background: #2e8b57; padding: 8px; font-weight: bold; }
+label { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+input[type=number] { width: 60px; }
+.row { display: flex; gap: 4px; }
+.row button { flex: 1; }
+#msg { min-height: 1.2em; color: #8f8; }
+#msg.bad { color: #f88; }
+.help { font-size: 12px; opacity: .75; margin: 0; }
+
+#hud { position: fixed; top: 10px; left: 10px; background: rgba(20, 25, 30, .8); color: #fff; padding: 10px 14px; border-radius: 6px; line-height: 1.5; min-width: 220px; }
+#hud { display: flex; align-items: flex-start; gap: 14px; }
+#stats { min-width: 220px; }
+#mini { display: block; flex: none; width: 180px; height: 150px; }
+#hud b { color: #ffd34d; }
+#hud .warn { color: #ff7b7b; }
+#power { height: 8px; background: #333; margin-top: 4px; }
+#power div { height: 100%; width: 0; background: #ffd34d; }
+#help { position: fixed; bottom: 10px; left: 10px; background: rgba(20, 25, 30, .7); color: #ddd; padding: 6px 10px; border-radius: 6px; font-size: 12px; }
+#end { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column; background: rgba(0, 0, 0, .55); color: #fff; font-size: 28px; text-align: center; gap: 8px; }
+#end small { font-size: 16px; opacity: .8; }

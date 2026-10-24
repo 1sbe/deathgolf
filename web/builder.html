@@ -1,0 +1,33 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Death Golf - Level Builder</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="panel">
+  <h3>Level Builder</h3>
+  <div id="tools"></div>
+  <label>Brush radius <input id="radius" type="range" min="1" max="8" step="0.5" value="3"> <span id="rv">3</span></label>
+  <label>Par <input id="par" type="number" min="1" max="12" value="3"></label>
+  <label>Worm speed <input id="wspeed" type="number" min="0.5" max="6" step="0.1" value="1.6"></label>
+  <div class="row">
+    <button id="undo">Undo (Z)</button>
+    <button id="new">Flat</button>
+    <button id="def">Default</button>
+  </div>
+  <div class="row">
+    <button id="save">Download</button>
+    <button id="load">Load file</button>
+    <input id="file" type="file" accept=".json" hidden>
+  </div>
+  <button id="play" class="big">Save &amp; Play test</button>
+  <div id="msg"></div>
+  <p class="help">Left-drag: use tool. Right-drag: orbit. Wheel: zoom. WASD: pan.<br>
+  Place tools drop an object on the clicked column; "Remove" tools delete it.</p>
+</div>
+<script type="module" src="js/builder.js"></script>
+</body>
+</html>

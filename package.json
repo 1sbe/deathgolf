@@ -1,0 +1,12 @@
+{
+  "name": "deathgolf",
+  "private": true,
+  "scripts": {
+    "build": "./build.sh",
+    "start": "bun server.ts",
+    "test": "node tests/core.test.js"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}
