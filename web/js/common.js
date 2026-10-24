@@ -143,7 +143,7 @@ export class Renderer {
           float t = dot(wp - eye, dir) / dot(dir, dir);
           bool inside = radius > 0.0 && t > 0.0 && t < 0.97 && length(wp - (eye + dir * t)) < radius;
           if (mode < 0.5 ? inside : !inside) discard;
-          if (inside) a = 0.28;
+          if (inside) a = 0.1;
         }
         gl_FragColor = vec4(mix(c, sky, clamp((d-60.0)/120.0, 0.0, 0.6)), a);
       }`));

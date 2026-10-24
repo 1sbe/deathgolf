@@ -94,11 +94,12 @@ const createCore = require('../web/wasm/core.js');
     for (let i = 0; i < 60 * 2 && M._dg_status() === 0; i++) M._dg_step(1 / 60);
     let s2 = segs(), q = b();
     assert.strictEqual(M._dg_status(), 0, 'standing on the back is safe');
-    assert.ok(Math.hypot(q[3] - s2[12], q[5] - s2[14]) < 1.5 && q[4] > s2[13], 'player rides the worm');
+    // Still on top of some segment (the worm may have curved under the player).
+    assert.ok(s2.some((_, i) => i % 4 === 0 && Math.hypot(q[3] - s2[i], q[5] - s2[i + 2]) < s2[i + 3] && q[4] > s2[i + 1]), 'player rides the worm');
     M._dg_teleport(1, s2[16], s2[17] + s2[19] + .6, s2[18]);
     for (let i = 0; i < 60; i++) M._dg_step(1 / 60);
     s2 = segs(); q = b();
-    assert.ok(Math.hypot(q[0] - s2[16], q[2] - s2[18]) < 2 && q[1] > s2[17], 'ball rides the worm');
+    assert.ok(s2.some((_, i) => i % 4 === 0 && Math.hypot(q[0] - s2[i], q[2] - s2[i + 2]) < s2[i + 3] && q[1] > s2[i + 1]), 'ball rides the worm');
     M._dg_restart();
     s = segs();
     const dx = s[0] - s[4], dz = s[2] - s[6], l = Math.hypot(dx, dz);

@@ -24,7 +24,7 @@ M._dg_start_game();
 
 const keys = new Set();
 let club = 1, charging = false, chargeT = 0, power = 0, flash = '', flashUntil = 0, dragging = false;
-const CLUBS = ['Putter', 'Iron', 'Wedge'];
+const CLUBS = ['Putter', 'Iron', 'Wedge', 'Driver'];
 
 // Physical key, so Shift/Caps can't leave a key stuck down.
 const keyOf = (e) => (e.code.startsWith('Key') ? e.code.slice(3).toLowerCase() : e.code.startsWith('Digit') ? e.code.slice(5) : e.code === 'Space' ? ' ' : e.key.toLowerCase());
@@ -34,7 +34,7 @@ window.onkeydown = (e) => {
   keys.add(k);
   if (k === 'e') M._dg_interact();
   if (k === 'r') restart();
-  if (k >= '1' && k <= '3') club = +k - 1;
+  if (k >= '1' && k <= '4') club = +k - 1;
   if (k === 'f' && M._dg_status() === 0) (charging = true), (chargeT = 0);
   if (k === ' ') e.preventDefault();
 };

@@ -18,7 +18,7 @@ static const int NX = 64, NY = 32, NZ = 96;
 static const int VOL = NX * NY * NZ;
 static const float GRAV = 20.f;
 static const float SUB_DT = 1.f / 120.f;
-static const float WORM_R = 1.2f;
+static const float WORM_R = 2.4f;
 static const float HOLE_PROTECT = 1.6f;
 
 enum { MAT_AIR = 0, MAT_DIRT = 1, MAT_GREEN = 2 };
@@ -310,10 +310,10 @@ static float aimOn, aimDx, aimDz, aimPow;
 static int penalties;
 static int runCount;
 static const float BALL_R = .35f, PLAYER_R = .45f;
-static const float SEG_SPACING = 1.0f;
+static const float SEG_SPACING = 2.0f;
 static const int SEGS = 9;
 
-static float segRadius(int k) { return WORM_R - .06f * k; }
+static float segRadius(int k) { return WORM_R - .12f * k; }
 static V segCur[SEGS], segPrev[SEGS];
 static bool ballOnWorm;
 // Point `d` units behind the head, measured along the worm's trail.
@@ -367,7 +367,7 @@ static void setupWorm() {
   worm.head.y = wormSurfaceY(worm.head);
   // Pre-fill the trail so the body starts stretched out behind the head.
   worm.trail.clear();
-  for (int i = 40; i >= 1; i--) worm.trail.push_back(worm.head - worm.dir * (.4f * i));
+  for (int i = 60; i >= 1; i--) worm.trail.push_back(worm.head - worm.dir * (.4f * i));
   worm.sinceTrail = 0;
   computeSegs();
   memcpy(segPrev, segCur, sizeof segCur);
@@ -445,7 +445,7 @@ static void stepWorm(float dt) {
   float d = len(to);
   bool last = worm.cur == worm.nwp - 1;
   worm.final_ = last;
-  if (last ? d < 1.4f : d < 1.8f) {
+  if (last ? d < 2.8f : d < 3.6f) {
     if (last) {
       status = ST_LOST;
       return;
@@ -494,9 +494,9 @@ static void stepWorm(float dt) {
   carry(ball, BALL_R);
   carry(player, PLAYER_R);
   // Only the mouth is deadly: the player dies, the ball goes back to its last safe spot.
-  V mouth = worm.head + worm.dir * .9f;
-  if (len(player - mouth) < .9f) status = ST_LOST;
-  if (len(ball - mouth) < .8f) respawnBall(true);
+  V mouth = worm.head + worm.dir * 1.8f;
+  if (len(player - mouth) < 1.8f) status = ST_LOST;
+  if (len(ball - mouth) < 1.6f) respawnBall(true);
 }
 
 // Pushes a sphere out of the worm's body. Returns true if standing on its back.
@@ -617,11 +617,11 @@ API void dg_input(float mx, float mz, int jump, int thrust) {
 }
 static std::vector<V> aimPts;
 static V shotVel(float dx, float dz, float power, int club) {
-  static const float loft[3] = {.06f, .5f, .95f}, mult[3] = {.6f, .95f, 1.f};
+  static const float loft[4] = {.06f, .5f, .95f, .3f}, mult[4] = {.6f, .95f, 1.f, 1.4f};
   float l = std::sqrt(dx * dx + dz * dz);
   dx /= l;
   dz /= l;
-  club = std::max(0, std::min(2, club));
+  club = std::max(0, std::min(3, club));
   float sp = (4.f + std::max(0.f, std::min(1.f, power)) * 22.f) * mult[club];
   return {dx * std::cos(loft[club]) * sp, std::sin(loft[club]) * sp, dz * std::cos(loft[club]) * sp};
 }
@@ -650,7 +650,7 @@ API void dg_set_aim(int on, float dx, float dz, float power, int club) {
 API int dg_can_shoot() {
   return status == ST_PLAY && (ballResting || ballOnWorm) && len(player - ball) < 3.5f;
 }
-// club 0 putter, 1 iron, 2 wedge. power 0..1.
+// club 0 putter, 1 iron, 2 wedge, 3 driver. power 0..1.
 API int dg_shoot(float dx, float dz, float power, int club) {
   if (!dg_can_shoot()) return 0;
   if (dx * dx + dz * dz < 1e-12f) return 0;
