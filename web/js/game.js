@@ -3,7 +3,8 @@ import { loadCore, Renderer, OrbitCamera, loadLevel } from './common.js';
 const $ = (id) => document.getElementById(id);
 const M = await loadCore();
 const renderer = new Renderer($('c'), M);
-const cam = new OrbitCamera([16, 8, 16], 14);
+renderer.xray = 2.2;
+const cam = new OrbitCamera([32, 8, 48], 14);
 cam.pitch = 0.45;
 
 async function loadRequestedLevel() {
@@ -104,18 +105,18 @@ function frame(now) {
 // Minicube: the level cube rotated with the camera, showing worm, hole, ball and player.
 const mini = $('mini').getContext('2d');
 function drawMini() {
-  const N = M.N, W = 180, H = 150, sc = 62 / N;
+  const NX = M.NX, NY = M.NY, NZ = M.NZ, W = 180, H = 150, sc = 1.1;
   const cx = W / 2, cy = H / 2 + 14, c = Math.cos(cam.yaw), s = Math.sin(cam.yaw), tilt = 0.55;
   const proj = (x, y, z) => {
-    const a = x - N / 2, b = z - N / 2;
+    const a = x - NX / 2, b = z - NZ / 2;
     const rx = a * c - b * s, rz = a * s + b * c;
     return [cx + rx * sc, cy + (rz * tilt - y * 0.9) * sc, rz];
   };
   mini.clearRect(0, 0, W, H);
-  const corner = (i, y) => proj((i & 1) * N, y, (i >> 1) * N);
+  const corner = (i, y) => proj((i & 1) * NX, y, (i >> 1) * NZ);
   mini.lineWidth = 1;
   mini.strokeStyle = 'rgba(255,255,255,.45)';
-  for (const y of [0, N]) {
+  for (const y of [0, NY]) {
     mini.beginPath();
     [0, 1, 3, 2, 0].forEach((i, k) => mini[k ? 'lineTo' : 'moveTo'](...corner(i, y).slice(0, 2)));
     mini.stroke();
@@ -123,7 +124,7 @@ function drawMini() {
   for (let i = 0; i < 4; i++) {
     mini.beginPath();
     mini.moveTo(...corner(i, 0).slice(0, 2));
-    mini.lineTo(...corner(i, N).slice(0, 2));
+    mini.lineTo(...corner(i, NY).slice(0, 2));
     mini.stroke();
   }
   const b = M.ball(), o = M.objs();

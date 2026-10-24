@@ -13,7 +13,9 @@
 #define API extern "C"
 #endif
 
-static const int N = 32;
+// The course is 2x3 of the original 32-cube block: 2 wide (x), 3 deep (z).
+static const int NX = 64, NY = 32, NZ = 96;
+static const int VOL = NX * NY * NZ;
 static const float GRAV = 20.f;
 static const float SUB_DT = 1.f / 120.f;
 static const float WORM_R = 1.2f;
@@ -37,21 +39,27 @@ static V norm(V a) {
 }
 
 // ---------------------------------------------------------------- world
-static uint8_t vox[N * N * N], orig[N * N * N];
+static uint8_t vox[VOL], orig[VOL];
 static float objs[OBJ_COUNT][4];  // x, y, z, present
 static float params[4] = {3.f, 1.6f, 0, 0};  // par, worm speed
 static bool dirty = true;
 
-static inline int vidx(int x, int y, int z) { return (y * N + z) * N + x; }
+static inline int vidx(int x, int y, int z) { return (y * NZ + z) * NX + x; }
 static inline uint8_t at(int x, int y, int z) {
   if (y < 0) return 1;
-  if (x < 0 || x >= N || z < 0 || z >= N || y >= N) return 0;
+  if (x < 0 || x >= NX || z < 0 || z >= NZ || y >= NY) return 0;
   return vox[vidx(x, y, z)];
 }
 static int topY(int x, int z) {
-  for (int y = N - 1; y >= 0; y--)
+  for (int y = NY - 1; y >= 0; y--)
     if (at(x, y, z)) return y;
   return -1;
+}
+
+static int origTopY(int x, int z) {
+  for (int y = NY - 1; y >= 0; y--)
+    if (orig[vidx(x, y, z)]) return y;
+  return 0;
 }
 
 // Smooth solidity: trilinear blend of voxel centres. Surface sits at 0.5.
@@ -105,8 +113,8 @@ static bool resolve(V& p, V& v, float r, float rest, V* nOut, int* mat) {
 // ---------------------------------------------------------------- level
 static void clearWorld() {
   memset(vox, 0, sizeof vox);
-  for (int z = 0; z < N; z++)
-    for (int x = 0; x < N; x++) vox[vidx(x, 0, z)] = MAT_DIRT;
+  for (int z = 0; z < NZ; z++)
+    for (int x = 0; x < NX; x++) vox[vidx(x, 0, z)] = MAT_DIRT;
   memset(objs, 0, sizeof objs);
   params[0] = 3.f;
   params[1] = 1.6f;
@@ -114,8 +122,8 @@ static void clearWorld() {
 }
 
 static void place(int type, int x, int z) {
-  x = std::max(0, std::min(N - 1, x));
-  z = std::max(0, std::min(N - 1, z));
+  x = std::max(0, std::min(NX - 1, x));
+  z = std::max(0, std::min(NZ - 1, z));
   int t = topY(x, z);
   objs[type][0] = x + .5f;
   objs[type][1] = (float)(t + 1);
@@ -125,14 +133,14 @@ static void place(int type, int x, int z) {
 
 API void dg_default_level() {
   clearWorld();
-  float h[N][N];
-  const int hx = 28, hz = 28, tx = 3, tz = 3;
-  for (int z = 0; z < N; z++)
-    for (int x = 0; x < N; x++)
+  static float h[NX][NZ];
+  const int hx = NX - 4, hz = NZ - 4, tx = 3, tz = 3;
+  for (int z = 0; z < NZ; z++)
+    for (int x = 0; x < NX; x++)
       h[x][z] = 7.f + 2.5f * std::sin(x * .25f) * std::cos(z * .2f) + 1.5f * std::sin((x + z) * .15f);
   float hh = std::round(h[hx][hz]), th = std::round(h[tx][tz]);
-  for (int z = 0; z < N; z++)
-    for (int x = 0; x < N; x++) {
+  for (int z = 0; z < NZ; z++)
+    for (int x = 0; x < NX; x++) {
       float dg = std::hypot(x - hx, z - hz), dt = std::hypot(x - tx, z - tz);
       if (dg < 4.5f) h[x][z] = hh;
       else if (dt < 2.5f) h[x][z] = th;
@@ -142,16 +150,18 @@ API void dg_default_level() {
     }
   place(OBJ_TEE, tx, tz);
   place(OBJ_HOLE, hx, hz);
-  place(OBJ_CART, 11, 11);
-  place(OBJ_JET, 20, 20);
-  place(OBJ_WORM, 28, 4);
+  place(OBJ_CART, 14, 22);
+  place(OBJ_JET, 36, 56);
+  place(OBJ_WORM, NX - 4, 4);
   params[0] = 4.f;
   dirty = true;
 }
 
 API void dg_clear() { clearWorld(); }
 API uint8_t* dg_voxels() { return vox; }
-API int dg_size() { return N; }
+API int dg_size() { return NX; }
+API int dg_size_y() { return NY; }
+API int dg_size_z() { return NZ; }
 API float* dg_objs() { return &objs[0][0]; }
 API void dg_place(int type, int x, int z) {
   if (type >= 0 && type < OBJ_COUNT) place(type, x, z);
@@ -180,10 +190,10 @@ API int dg_validate() {
 // ---------------------------------------------------------------- sculpting
 // tools: 0 raise, 1 lower, 2 smooth, 3 flatten, 4 paint green, 5 paint dirt
 API void dg_brush(int tool, float cx, float cy, float cz, float r) {
-  int x0 = std::max(0, (int)std::floor(cx - r)), x1 = std::min(N - 1, (int)std::ceil(cx + r));
-  int y0 = std::max(1, (int)std::floor(cy - r)), y1 = std::min(N - 1, (int)std::ceil(cy + r));
-  int z0 = std::max(0, (int)std::floor(cz - r)), z1 = std::min(N - 1, (int)std::ceil(cz + r));
-  static uint8_t snap[N * N * N];
+  int x0 = std::max(0, (int)std::floor(cx - r)), x1 = std::min(NX - 1, (int)std::ceil(cx + r));
+  int y0 = std::max(1, (int)std::floor(cy - r)), y1 = std::min(NY - 1, (int)std::ceil(cy + r));
+  int z0 = std::max(0, (int)std::floor(cz - r)), z1 = std::min(NZ - 1, (int)std::ceil(cz + r));
+  static uint8_t snap[VOL];
   if (tool == 2) memcpy(snap, vox, sizeof vox);
   int level = (int)std::floor(cy);
   for (int z = z0; z <= z1; z++)
@@ -205,8 +215,8 @@ API void dg_brush(int tool, float cx, float cy, float cz, float r) {
               for (int b = -1; b <= 1; b++)
                 for (int d = -1; d <= 1; d++) {
                   int xx = x + d, yy = y + a, zz = z + b;
-                  if (xx < 0 || xx >= N || zz < 0 || zz >= N) continue;
-                  if (yy < 0 || (yy < N && snap[vidx(xx, yy, zz)])) cnt++;
+                  if (xx < 0 || xx >= NX || zz < 0 || zz >= NZ) continue;
+                  if (yy < 0 || (yy < NY && snap[vidx(xx, yy, zz)])) cnt++;
                 }
             if (cnt >= 14) { if (!c) c = MAT_DIRT; }
             else c = 0;
@@ -236,13 +246,14 @@ API int dg_raycast(float ox, float oy, float oz, float dx, float dy, float dz) {
   V o{ox, oy, oz}, d = norm({dx, dy, dz});
   float tmin = 0, tmax = 1e9f;
   float oa[3] = {o.x, o.y, o.z}, da[3] = {d.x, d.y, d.z};
+  const int dims[3] = {NX, NY, NZ};
   int entry = -1;
   for (int a = 0; a < 3; a++) {
     if (std::fabs(da[a]) < 1e-9f) {
-      if (oa[a] < 0 || oa[a] > N) return 0;
+      if (oa[a] < 0 || oa[a] > dims[a]) return 0;
       continue;
     }
-    float t1 = (0 - oa[a]) / da[a], t2 = (N - oa[a]) / da[a];
+    float t1 = (0 - oa[a]) / da[a], t2 = (dims[a] - oa[a]) / da[a];
     if (t1 > t2) std::swap(t1, t2);
     if (t1 > tmin) { tmin = t1; entry = a; }
     tmax = std::min(tmax, t2);
@@ -253,7 +264,7 @@ API int dg_raycast(float ox, float oy, float oz, float dx, float dy, float dz) {
   int c[3], step[3];
   float tn[3], td[3];
   for (int a = 0; a < 3; a++) {
-    c[a] = std::max(0, std::min(N - 1, (int)std::floor(pa[a])));
+    c[a] = std::max(0, std::min(dims[a] - 1, (int)std::floor(pa[a])));
     step[a] = da[a] > 0 ? 1 : -1;
     td[a] = std::fabs(da[a]) < 1e-9f ? 1e9f : std::fabs(1.f / da[a]);
     float edge = da[a] > 0 ? c[a] + 1 : c[a];
@@ -261,7 +272,7 @@ API int dg_raycast(float ox, float oy, float oz, float dx, float dy, float dz) {
   }
   int axis = entry;
   for (int i = 0; i < 256; i++) {
-    if (c[0] < 0 || c[0] >= N || c[1] < 0 || c[1] >= N || c[2] < 0 || c[2] >= N) return 0;
+    if (c[0] < 0 || c[0] >= NX || c[1] < 0 || c[1] >= NY || c[2] < 0 || c[2] >= NZ) return 0;
     if (vox[vidx(c[0], c[1], c[2])]) {
       for (int a = 0; a < 3; a++) {
         ray[a] = (float)c[a];
@@ -303,17 +314,36 @@ static const float SEG_SPACING = 1.0f;
 static const int SEGS = 9;
 
 static float segRadius(int k) { return WORM_R - .06f * k; }
-static V segPos(int k) {
-  if (k == 0 || worm.trail.empty()) return worm.head;
-  int back = (int)(k * SEG_SPACING / .4f);
-  int i = (int)worm.trail.size() - back;
-  return worm.trail[std::max(0, i)];
+static V segCur[SEGS], segPrev[SEGS];
+static bool ballOnWorm;
+// Point `d` units behind the head, measured along the worm's trail.
+static V pointBehind(float d) {
+  V prev = worm.head;
+  for (int i = (int)worm.trail.size() - 1; i >= 0; i--) {
+    V q = worm.trail[i];
+    float l = len(q - prev);
+    if (l >= d && l > 1e-6f) return prev + (q - prev) * (d / l);
+    d -= l;
+    prev = q;
+  }
+  return prev;
 }
+static void computeSegs() {
+  segCur[0] = worm.head;
+  for (int k = 1; k < SEGS; k++) segCur[k] = pointBehind(k * SEG_SPACING);
+}
+static V segPos(int k) { return segCur[k]; }
 
 static unsigned rngState;
 static float rnd() {
   rngState = rngState * 1664525u + 1013904223u;
   return (rngState >> 8) / 16777216.f;
+}
+
+// The worm rides just below the original surface so its back sticks out and it eats a trench.
+static float wormSurfaceY(V p) {
+  int x = std::max(0, std::min(NX - 1, (int)p.x)), z = std::max(0, std::min(NZ - 1, (int)p.z));
+  return (float)origTopY(x, z) + .5f;
 }
 
 static void setupWorm() {
@@ -324,18 +354,23 @@ static void setupWorm() {
   // Random order and heights; the hole is always the final waypoint.
   // Waypoints sit inside the earth so the worm tunnels instead of flying overhead.
   for (int i = 0; i < K; i++) {
-    float x = 3 + rnd() * (N - 6), z = 3 + rnd() * (N - 6);
+    float x = 3 + rnd() * (NX - 6), z = 3 + rnd() * (NZ - 6);
     float top = (float)std::max(3, topY((int)x, (int)z));
     worm.wp[i] = {x, top * (.6f + .4f * rnd()), z};
   }
   for (float& p : worm.ph) p = rnd() * 6.28f;
-  worm.wp[K] = hole;
+  worm.wp[K] = {hole.x, 0, hole.z};
   worm.nwp = K + 1;
   worm.cur = 0;
   worm.final_ = false;
-  worm.dir = norm(worm.wp[0] - worm.head);
+  worm.dir = norm(V{worm.wp[0].x - worm.head.x, 0, worm.wp[0].z - worm.head.z});
+  worm.head.y = wormSurfaceY(worm.head);
+  // Pre-fill the trail so the body starts stretched out behind the head.
   worm.trail.clear();
+  for (int i = 40; i >= 1; i--) worm.trail.push_back(worm.head - worm.dir * (.4f * i));
   worm.sinceTrail = 0;
+  computeSegs();
+  memcpy(segPrev, segCur, sizeof segCur);
 }
 
 static void respawnBall(bool penalty) {
@@ -355,6 +390,7 @@ static void initGame() {
   lastRest = ball;
   ballV = {0, 0, 0};
   ballResting = false;
+  ballOnWorm = false;
   restTimer = 0;
   float px = tee.x + 1.5f, pz = tee.z;
   player = {px, (float)topY((int)px, (int)pz) + 2.f, pz};
@@ -382,9 +418,9 @@ API void dg_restart() {
 
 static bool carve(V c, float R) {
   bool ch = false;
-  int x0 = std::max(0, (int)std::floor(c.x - R)), x1 = std::min(N - 1, (int)std::ceil(c.x + R));
-  int y0 = std::max(1, (int)std::floor(c.y - R)), y1 = std::min(N - 1, (int)std::ceil(c.y + R));
-  int z0 = std::max(0, (int)std::floor(c.z - R)), z1 = std::min(N - 1, (int)std::ceil(c.z + R));
+  int x0 = std::max(0, (int)std::floor(c.x - R)), x1 = std::min(NX - 1, (int)std::ceil(c.x + R));
+  int y0 = std::max(1, (int)std::floor(c.y - R)), y1 = std::min(NY - 1, (int)std::ceil(c.y + R));
+  int z0 = std::max(0, (int)std::floor(c.z - R)), z1 = std::min(NZ - 1, (int)std::ceil(c.z + R));
   for (int z = z0; z <= z1; z++)
     for (int y = y0; y <= y1; y++)
       for (int x = x0; x <= x1; x++) {
@@ -403,8 +439,9 @@ static bool carve(V c, float R) {
 }
 
 static void stepWorm(float dt) {
+  memcpy(segPrev, segCur, sizeof segCur);
   V target = worm.wp[worm.cur];
-  V to = target - worm.head;
+  V to{target.x - worm.head.x, 0, target.z - worm.head.z};
   float d = len(to);
   bool last = worm.cur == worm.nwp - 1;
   worm.final_ = last;
@@ -420,37 +457,64 @@ static void stepWorm(float dt) {
   V want = to * (1.f / d);
   if (d > 5.f) {
     float wv = std::min(1.f, (d - 5.f) / 5.f) * .9f;
-    want = norm(want + V{std::sin(gameTime * 1.3f + worm.ph[0]), std::sin(gameTime * .9f + worm.ph[1]) * .3f,
-                         std::cos(gameTime * 1.1f + worm.ph[2])} * wv);
+    want = norm(want + V{std::sin(gameTime * 1.3f + worm.ph[0]), 0, std::cos(gameTime * 1.1f + worm.ph[2])} * wv);
   }
   float turn = std::min(1.f, 2.2f * dt);
   worm.dir = norm(worm.dir + (want - worm.dir) * turn);
+  worm.dir.y = 0;
+  worm.dir = norm(worm.dir);
   float dist = params[1] * dt;
   worm.head = worm.head + worm.dir * dist;
-  worm.head.x = std::max(1.f, std::min(N - 1.f, worm.head.x));
-  worm.head.z = std::max(1.f, std::min(N - 1.f, worm.head.z));
-  // Stay inside the earth: between bedrock and just under the local surface.
-  float surf = (float)std::max(3, topY((int)worm.head.x, (int)worm.head.z));
-  worm.head.y = std::max(2.f, std::min(surf - .2f, worm.head.y));
+  worm.head.x = std::max(1.f, std::min(NX - 1.f, worm.head.x));
+  worm.head.z = std::max(1.f, std::min(NZ - 1.f, worm.head.z));
+  worm.head.y += (wormSurfaceY(worm.head) - worm.head.y) * std::min(1.f, 6.f * dt);
   worm.sinceTrail += dist;
   if (worm.sinceTrail >= .4f) {
     worm.sinceTrail = 0;
     worm.trail.push_back(worm.head);
     if (worm.trail.size() > 200) worm.trail.erase(worm.trail.begin(), worm.trail.begin() + 100);
   }
+  computeSegs();
   if (carve(worm.head, WORM_R)) dirty = true;
   for (int t = OBJ_CART; t <= OBJ_JET; t++)
     if (objs[t][3] && len(V{objs[t][0], objs[t][1], objs[t][2]} - worm.head) < WORM_R + .5f) {
       objs[t][3] = 0;
       if (t == OBJ_CART) mounted = false;
     }
-  // Worm kills the player, and sends the ball back to the last safe spot.
+  // Anything resting on the worm's back travels with it.
+  auto carry = [&](V& p, float rad) {
+    int best = -1;
+    float bestGap = .12f;
+    for (int k = 0; k < SEGS; k++) {
+      float gap = len(p - segCur[k]) - (segRadius(k) + rad);
+      if (p.y > segCur[k].y + .3f * segRadius(k) && gap < bestGap) best = k, bestGap = gap;
+    }
+    if (best >= 0) p = p + (segCur[best] - segPrev[best]);
+  };
+  carry(ball, BALL_R);
+  carry(player, PLAYER_R);
+  // Only the mouth is deadly: the player dies, the ball goes back to its last safe spot.
+  V mouth = worm.head + worm.dir * .9f;
+  if (len(player - mouth) < .9f) status = ST_LOST;
+  if (len(ball - mouth) < .8f) respawnBall(true);
+}
+
+// Pushes a sphere out of the worm's body. Returns true if standing on its back.
+static bool resolveWorm(V& p, V& v, float rad, float rest, float minNy) {
+  bool on = false;
   for (int k = 0; k < SEGS; k++) {
-    V s = segPos(k);
-    float r = segRadius(k);
-    if (len(player - s) < r + .1f) status = ST_LOST;
-    if (len(ball - s) < r + .1f) respawnBall(true);
+    V d = p - segCur[k];
+    float r = segRadius(k) + rad, l = len(d);
+    if (l >= r) continue;
+    V n = l < 1e-4f ? V{0, 1, 0} : d * (1.f / l);
+    // On top: lift straight up so standing objects don't creep down the curved back.
+    if (n.y > minNy) p.y = segCur[k].y + std::sqrt(std::max(0.f, r * r - d.x * d.x - d.z * d.z));
+    else p = segCur[k] + n * r;
+    float vn = dot(v, n);
+    if (vn < 0) v = v - n * (vn * (1.f + (-vn < 1.5f ? 0.f : rest)));
+    if (n.y > minNy) on = true;
   }
+  return on;
 }
 
 static void stepBall(float dt) {
@@ -471,8 +535,15 @@ static void stepBall(float dt) {
     ballV.x *= k;
     ballV.z *= k;
   }
+  ballOnWorm = resolveWorm(ball, ballV, BALL_R, .45f, .5f);
+  if (ballOnWorm) {
+    float k = std::exp(-6.f * dt);
+    ballV.x *= k;
+    ballV.z *= k;
+    ballResting = false;
+  }
   float sp = len(ballV);
-  if (sp < .35f) restTimer += dt;
+  if (sp < .35f && !ballOnWorm) restTimer += dt;
   else restTimer = 0;
   if (ballResting) {
     if (sp > .8f) ballResting = false;
@@ -482,7 +553,7 @@ static void stepBall(float dt) {
     ballV = {0, 0, 0};
     lastRest = ball;
   }
-  if (ball.y < -3 || ball.x < -3 || ball.x > N + 3 || ball.z < -3 || ball.z > N + 3) respawnBall(true);
+  if (ball.y < -3 || ball.x < -3 || ball.x > NX + 3 || ball.z < -3 || ball.z > NZ + 3) respawnBall(true);
   // Cup check: slow enough and low enough over the hole.
   if (objs[OBJ_HOLE][3]) {
     float dx = ball.x - objs[OBJ_HOLE][0], dz = ball.z - objs[OBJ_HOLE][2];
@@ -513,8 +584,9 @@ static void stepPlayer(float dt) {
   player = player + playerV * dt;
   V n{0, 1, 0};
   grounded = resolve(player, playerV, PLAYER_R, 0.f, &n, nullptr) && n.y > .55f;
-  player.x = std::max(-2.f, std::min(N + 2.f, player.x));
-  player.z = std::max(-2.f, std::min(N + 2.f, player.z));
+  grounded = resolveWorm(player, playerV, PLAYER_R, 0.f, .55f) || grounded;
+  player.x = std::max(-2.f, std::min(NX + 2.f, player.x));
+  player.z = std::max(-2.f, std::min(NZ + 2.f, player.z));
   if (player.y < -3) {
     player = {ball.x, ball.y + 2.f, ball.z};
     playerV = {0, 0, 0};
@@ -571,12 +643,12 @@ API void dg_set_aim(int on, float dx, float dz, float power, int club) {
       break;
     }
     if (i % 4 == 0) aimPts.push_back(p);
-    if (p.y < -3 || p.x < -3 || p.x > N + 3 || p.z < -3 || p.z > N + 3) break;
+    if (p.y < -3 || p.x < -3 || p.x > NX + 3 || p.z < -3 || p.z > NZ + 3) break;
   }
 }
 
 API int dg_can_shoot() {
-  return status == ST_PLAY && ballResting && len(player - ball) < 3.5f;
+  return status == ST_PLAY && (ballResting || ballOnWorm) && len(player - ball) < 3.5f;
 }
 // club 0 putter, 1 iron, 2 wedge. power 0..1.
 API int dg_shoot(float dx, float dz, float power, int club) {
@@ -626,6 +698,18 @@ API float dg_worm_eta() {
   for (int i = worm.cur; i < worm.nwp; i++) d += len(worm.wp[i] - p), p = worm.wp[i];
   return d / std::max(.1f, params[1]);
 }
+// Worm segments as x, y, z, radius (used by tests and tooling).
+API float* dg_worm_segs() {
+  static float o[SEGS * 4];
+  for (int k = 0; k < SEGS; k++) o[k * 4] = segCur[k].x, o[k * 4 + 1] = segCur[k].y, o[k * 4 + 2] = segCur[k].z, o[k * 4 + 3] = segRadius(k);
+  return o;
+}
+API void dg_teleport(int what, float x, float y, float z) {
+  V* t = what ? &ball : &player;
+  *t = {x, y, z};
+  (what ? ballV : playerV) = {0, 0, 0};
+  if (what) ballResting = false;
+}
 API float* dg_ball() { static float b[12]; b[0]=ball.x; b[1]=ball.y; b[2]=ball.z; b[3]=player.x; b[4]=player.y; b[5]=player.z; b[6]=ballResting; b[7]=worm.head.x; b[8]=worm.head.y; b[9]=worm.head.z; return b; }
 
 // ---------------------------------------------------------------- meshing
@@ -674,9 +758,9 @@ static void sphere(std::vector<float>& m, float cx, float cy, float cz, float r,
 
 API int dg_terrain_mesh() {
   tmesh.clear();
-  for (int y = 0; y < N; y++)
-    for (int z = 0; z < N; z++)
-      for (int x = 0; x < N; x++) {
+  for (int y = 0; y < NY; y++)
+    for (int z = 0; z < NZ; z++)
+      for (int x = 0; x < NX; x++) {
         uint8_t m = vox[vidx(x, y, z)];
         if (!m) continue;
         float jit = ((x + y + z) & 1) ? 1.f : .94f;

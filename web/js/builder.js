@@ -10,7 +10,7 @@ const $ = (id) => document.getElementById(id);
 const M = await loadCore();
 const canvas = $('c');
 const renderer = new Renderer(canvas, M);
-const cam = new OrbitCamera([M.N / 2, 6, M.N / 2], 48);
+const cam = new OrbitCamera([M.NX / 2, 6, M.NZ / 2], 90);
 let tool = 0;
 const undoStack = [];
 

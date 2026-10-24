@@ -13,3 +13,9 @@ Golf on a voxel cube of earth while a giant worm devours it. The worm runs on a 
     cd web && python3 -m http.server 8123
 
 Open `builder.html`, sculpt, place tee/hole/cart/jetpack/worm start, then "Save & Play test".
+
+--
+
+serve-
+
+ gnome-terminal -- /bin/sh -c 'bun server.ts; exec bash'

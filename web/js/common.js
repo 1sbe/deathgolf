@@ -11,8 +11,10 @@ export async function loadCore() {
     document.head.appendChild(s);
   });
   const M = await createCore();
-  M.N = M._dg_size();
-  M.voxels = () => new Uint8Array(M.HEAPU8.buffer, M._dg_voxels(), M.N ** 3);
+  M.NX = M._dg_size();
+  M.NY = M._dg_size_y();
+  M.NZ = M._dg_size_z();
+  M.voxels = () => new Uint8Array(M.HEAPU8.buffer, M._dg_voxels(), M.NX * M.NY * M.NZ);
   M.objs = () => new Float32Array(M.HEAPF32.buffer, M._dg_objs(), 20);
   M.ball = () => new Float32Array(M.HEAPF32.buffer, M._dg_ball(), 12);
   return M;
@@ -23,7 +25,7 @@ export function serializeLevel(M) {
   let bin = '';
   for (let i = 0; i < vox.length; i += 4096) bin += String.fromCharCode.apply(null, vox.subarray(i, i + 4096));
   const o = M.objs();
-  const level = { version: 1, size: M.N, par: M._dg_get_param(0), wormSpeed: M._dg_get_param(1), voxels: btoa(bin) };
+  const level = { version: 2, size: [M.NX, M.NY, M.NZ], par: M._dg_get_param(0), wormSpeed: M._dg_get_param(1), voxels: btoa(bin) };
   OBJ_NAMES.forEach((name, t) => {
     level[name] = o[t * 4 + 3] ? [o[t * 4], o[t * 4 + 1], o[t * 4 + 2]] : null;
   });
@@ -31,9 +33,10 @@ export function serializeLevel(M) {
 }
 
 export function loadLevel(M, level) {
-  if (level.size !== M.N) throw new Error(`level size ${level.size} != ${M.N}`);
+  const want = [M.NX, M.NY, M.NZ].join('x');
+  if (!Array.isArray(level.size) || level.size.join('x') !== want) throw new Error(`level size ${level.size} != ${want}`);
   const bin = atob(level.voxels);
-  if (bin.length !== M.N ** 3) throw new Error('bad voxel data');
+  if (bin.length !== M.NX * M.NY * M.NZ) throw new Error('bad voxel data');
   M._dg_clear();
   const vox = M.voxels();
   for (let i = 0; i < bin.length; i++) vox[i] = bin.charCodeAt(i);
@@ -128,13 +131,26 @@ export class Renderer {
       return s;
     };
     const p = (this.prog = gl.createProgram());
-    gl.attachShader(p, sh(gl.VERTEX_SHADER, `attribute vec3 pos; attribute vec3 col; uniform mat4 mvp; varying vec3 c; varying float d;
-      void main(){ gl_Position = mvp*vec4(pos,1.0); c = col; d = gl_Position.w; }`));
-    gl.attachShader(p, sh(gl.FRAGMENT_SHADER, `precision mediump float; varying vec3 c; varying float d; uniform vec3 sky;
-      void main(){ gl_FragColor = vec4(mix(c, sky, clamp((d-60.0)/120.0, 0.0, 0.6)), 1.0); }`));
+    gl.attachShader(p, sh(gl.VERTEX_SHADER, `attribute vec3 pos; attribute vec3 col; uniform mat4 mvp; varying vec3 c; varying float d; varying vec3 wp;
+      void main(){ gl_Position = mvp*vec4(pos,1.0); c = col; d = gl_Position.w; wp = pos; }`));
+    gl.attachShader(p, sh(gl.FRAGMENT_SHADER, `precision mediump float; varying vec3 c; varying float d; varying vec3 wp; uniform vec3 sky;
+      uniform vec3 eye; uniform vec3 focus; uniform float mode; uniform float radius;
+      // mode 0: opaque terrain, 1: see-through terrain, 2: no x-ray. Terrain in the tube between camera and focus is see-through.
+      void main(){
+        float a = 1.0;
+        if (mode < 1.5) {
+          vec3 dir = focus - eye;
+          float t = dot(wp - eye, dir) / dot(dir, dir);
+          bool inside = radius > 0.0 && t > 0.0 && t < 0.97 && length(wp - (eye + dir * t)) < radius;
+          if (mode < 0.5 ? inside : !inside) discard;
+          if (inside) a = 0.28;
+        }
+        gl_FragColor = vec4(mix(c, sky, clamp((d-60.0)/120.0, 0.0, 0.6)), a);
+      }`));
     gl.linkProgram(p);
     gl.useProgram(p);
-    this.locs = { mvp: gl.getUniformLocation(p, 'mvp'), sky: gl.getUniformLocation(p, 'sky') };
+    this.locs = Object.fromEntries(['mvp', 'sky', 'eye', 'focus', 'mode', 'radius'].map((n) => [n, gl.getUniformLocation(p, n)]));
+    this.xray = 0; // radius of the see-through tube around the camera-to-target line; 0 disables
     gl.uniform3f(this.locs.sky, 0.55, 0.75, 0.95);
     this.bufs = { terrain: { buf: gl.createBuffer(), n: 0 }, ents: { buf: gl.createBuffer(), n: 0 } };
     gl.enable(gl.DEPTH_TEST);
@@ -160,12 +176,28 @@ export class Renderer {
     const pos = gl.getAttribLocation(this.prog, 'pos'), col = gl.getAttribLocation(this.prog, 'col');
     gl.enableVertexAttribArray(pos);
     gl.enableVertexAttribArray(col);
-    for (const b of Object.values(this.bufs)) {
-      if (!b.n) continue;
+    const e = cam.eye();
+    gl.uniform3f(this.locs.eye, e[0], e[1], e[2]);
+    gl.uniform3f(this.locs.focus, cam.target[0], cam.target[1], cam.target[2]);
+    gl.uniform1f(this.locs.radius, this.xray);
+    const pass = (b, mode) => {
+      if (!b.n) return;
+      gl.uniform1f(this.locs.mode, mode);
       gl.bindBuffer(gl.ARRAY_BUFFER, b.buf);
       gl.vertexAttribPointer(pos, 3, gl.FLOAT, false, 24, 0);
       gl.vertexAttribPointer(col, 3, gl.FLOAT, false, 24, 12);
       gl.drawArrays(gl.TRIANGLES, 0, b.n);
+    };
+    gl.disable(gl.BLEND);
+    pass(this.bufs.terrain, 0);
+    pass(this.bufs.ents, 2);
+    if (this.xray > 0) {
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      gl.depthMask(false);
+      pass(this.bufs.terrain, 1);
+      gl.depthMask(true);
+      gl.disable(gl.BLEND);
     }
   }
   refreshTerrain() {
